@@ -173,6 +173,7 @@ public:
             {11, &IVi2Session::GetNotificationEvent, "GetNotificationEvent"},
             {13, &IVi2Session::ReleaseNotificationEvent, "ReleaseNotificationEvent"},
             {21, &IVi2Session::GetNotifications, "GetNotifications"},
+            {31, &IVi2Session::Command31, "Command31"},
             {3, &IVi2Session::GetSessionLimit, "GetSessionLimit"},
             {5, &IVi2Session::GetSessionLimit, "GetRequestGroupLimit"},
             {51, &IVi2Session::ConfigureRequestGroups, "ConfigureRequestGroups"},
@@ -623,6 +624,16 @@ private:
                 result = ResultSuccess;
             }
         }
+        IPC::ResponseBuilder rb{ctx, 2};
+        rb.Push(result.raw);
+    }
+    void Command31(HLERequestContext& ctx) {
+        // Seen from Unreal Engine titles right after display setup: one u32
+        // argument, result only. Semantics unknown; accepted so boot continues.
+        const auto* packet = ctx.CommandBuffer();
+        const auto result = packet[0] == 0x2f && packet[1] == 1
+            ? ResultSuccess : Kernel::ResultInvalidCombination;
+        LOG_WARNING(Service_AM, "(STUBBED) VI2 command 31 arg={:#x}, result={:#x}", packet[2], result.raw);
         IPC::ResponseBuilder rb{ctx, 2};
         rb.Push(result.raw);
     }
