@@ -96,8 +96,11 @@ jobs:
           set -o pipefail
           cd src/android
           chmod +x ./gradlew
-          ./gradlew copyMainlineReleaseOutputs -PprebuiltJniDir="$GITHUB_WORKSPACE/prebuilt-jni" \
-            -Pnightly=false 2>&1 | tee ../../build.log
+          if ! ./gradlew copyMainlineReleaseOutputs -PprebuiltJniDir="$GITHUB_WORKSPACE/prebuilt-jni" \
+            -Pnightly=false 2>&1 | tee ../../build.log; then
+            grep -E '^e: |error:|What went wrong|FAILURE|Could not|> ' ../../build.log | head -10 | while read -r l; do echo "::error title=quick build::${l:0:900}"; done
+            exit 1
+          fi
 
       - uses: actions/cache/restore@v4
         if: steps.quick.outcome != 'success'
