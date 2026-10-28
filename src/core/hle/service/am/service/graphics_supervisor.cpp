@@ -202,6 +202,7 @@ public:
         }
         if (m_default_display) { m_display_service->CloseDisplay(*m_default_display); }
         m_context.CloseEvent(m_event);
+        if (m_event31) m_context.CloseEvent(m_event31);
     }
 
     Result HandleSyncRequest(Kernel::KServerSession& session, HLERequestContext& ctx) override {
@@ -628,14 +629,33 @@ private:
         rb.Push(result.raw);
     }
     void Command31(HLERequestContext& ctx) {
-        // Seen from Unreal Engine titles right after display setup: one u32
-        // argument, result only. Semantics unknown; accepted so boot continues.
+        // Seen from Unreal Engine titles right after display setup. Same shape as
+        // GetNotificationEvent (one u32, returns a handle); the title fails with
+        // InvalidHandle without one. Assumed to be the display's vsync event.
         const auto* packet = ctx.CommandBuffer();
-        const auto result = packet[0] == 0x2f && packet[1] == 1
-            ? ResultSuccess : Kernel::ResultInvalidCombination;
-        LOG_WARNING(Service_AM, "(STUBBED) VI2 command 31 arg={:#x}, result={:#x}", packet[2], result.raw);
-        IPC::ResponseBuilder rb{ctx, 2};
+        Result result = Kernel::ResultInvalidCombination;
+        Kernel::KReadableEvent* readable{};
+        if (packet[0] == 0x2f && packet[1] == 1) {
+            if (!m_vsync_readable && m_display_service && m_default_display) {
+                if (m_display_service->GetDisplayVsyncEvent(&m_vsync_readable, *m_default_display).IsError()) {
+                    m_vsync_readable = nullptr;
+                }
+            }
+            if (!m_vsync_readable) {
+                if (!m_event31) m_event31 = m_context.CreateEvent("Vi2Event31");
+                if (m_event31) {
+                    m_event31->Signal(kernel);
+                    m_vsync_readable = &m_event31->GetReadableEvent();
+                }
+            }
+            result = m_vsync_readable ? ResultSuccess : Kernel::ResultOutOfResource;
+            readable = m_vsync_readable;
+        }
+        LOG_WARNING(Service_AM, "(STUBBED) VI2 command 31 arg={:#x}, vsync={}, result={:#x}", packet[2],
+                    m_event31 == nullptr && readable != nullptr, result.raw);
+        IPC::ResponseBuilder rb{ctx, 2, 1};
         rb.Push(result.raw);
+        ctx.AddCopyObject(readable);
     }
     void ConfigureRequestGroups(HLERequestContext& ctx) {
         const auto* packet = ctx.CommandBuffer();
@@ -697,6 +717,8 @@ private:
         ctx.AddMoveObject(readable);
     }
 
+    Kernel::KReadableEvent* m_vsync_readable{};
+    Kernel::KEvent* m_event31{};
     std::shared_ptr<NativeImageRegistry> m_images;
     std::shared_ptr<Core::Timing::EventType> m_release_poll;
     std::array<ClientState, 16> m_client_states{};
