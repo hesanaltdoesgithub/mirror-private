@@ -75,6 +75,10 @@ jobs:
           apk=$(ls prev/*.apk | head -1)
           mkdir -p prebuilt-jni/arm64-v8a
           unzip -j -o "$apk" 'lib/arm64-v8a/*' -d prebuilt-jni/arm64-v8a
+          # Libraries already shipped in the repo's jniLibs would be merged twice.
+          for f in src/android/app/src/main/jniLibs/arm64-v8a/*.so; do
+            [ -e "$f" ] && rm -f "prebuilt-jni/arm64-v8a/$(basename "$f")"
+          done
           ls -la prebuilt-jni/arm64-v8a
           # Configure once so the SDL Java sources Gradle compiles against are generated.
           NDK="$ANDROID_HOME/ndk/$NDK_VERSION"
