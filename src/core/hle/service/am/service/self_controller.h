@@ -71,6 +71,7 @@ private:
     Result SetRecordVolumeMuted(bool muted);
     Result Unknown230(u32 in_val, Out<u16> out_val);
     Result Unknown240(u32 in_val);
+    Result Unknown2400(u8 in_val);
 
     Kernel::KClientSession* m_graphics_supervisor_session{};
     Kernel::KProcess* const m_process;
