@@ -5,12 +5,44 @@ on:
     branches: [ns2-android]
   workflow_dispatch:
 
+concurrency:
+  group: ns2-android
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  actions: read
+
 jobs:
   build:
     runs-on: ubuntu-24.04
     timeout-minutes: 360
+    env:
+      NDK_VERSION: 28.2.13676358
+      CCACHE_DIR: ${{ github.workspace }}/.ccache
+      CCACHE_MAXSIZE: 5G
+      GH_TOKEN: ${{ github.token }}
     steps:
       - uses: actions/checkout@v5
+        with:
+          fetch-depth: 50
+
+      - name: Decide whether native code must be rebuilt
+        id: plan
+        run: |
+          prev=$(gh run list -R "$GITHUB_REPOSITORY" --workflow android-ns2.yml --branch ns2-android \
+                 --status success --limit 1 --json databaseId,headSha \
+                 --jq '.[0] | "\(.databaseId) \(.headSha)"' || true)
+          run_id=${prev%% *}; sha=${prev##* }
+          mode=full
+          if [ -n "$run_id" ] && git cat-file -e "$sha" 2>/dev/null; then
+            native=$(git diff --name-only "$sha" HEAD | grep -vE '^(src/android/app/src/main/(java|res)/|\.github/|src/android/app/build\.gradle\.kts$)' || true)
+            if [ -z "$native" ]; then mode=prebuilt; fi
+            echo "Changed outside app code since $sha:"; echo "$native"
+          fi
+          echo "mode=$mode" >> "$GITHUB_OUTPUT"
+          echo "run_id=$run_id" >> "$GITHUB_OUTPUT"
+          echo "Build mode: $mode (previous run: ${run_id:-none})"
 
       - name: Free disk space
         run: |
@@ -32,22 +64,68 @@ jobs:
           sudo apt-get install -y ninja-build glslang-tools ccache
           SDKM="$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
           yes | "$SDKM" --licenses > /dev/null
-          "$SDKM" "ndk;28.2.13676358" "cmake;3.31.5"
+          "$SDKM" "ndk;$NDK_VERSION" "cmake;3.31.5"
 
-      - name: Build APK
-        env:
-          ANDROID_NDK_HOME: ${{ env.ANDROID_HOME }}/ndk/28.2.13676358
+      - name: Fetch native libraries from the previous build
+        id: prebuilt
+        if: steps.plan.outputs.mode == 'prebuilt'
+        continue-on-error: true
+        run: |
+          set -e
+          gh run download "${{ steps.plan.outputs.run_id }}" -R "$GITHUB_REPOSITORY" -n eden-ns2-android -D prev
+          apk=$(ls prev/*.apk | head -1)
+          mkdir -p prebuilt-jni/arm64-v8a
+          unzip -j -o "$apk" 'lib/arm64-v8a/*' -d prebuilt-jni/arm64-v8a
+          ls -la prebuilt-jni/arm64-v8a
+          # Configure once so the SDL Java sources Gradle compiles against are generated.
+          NDK="$ANDROID_HOME/ndk/$NDK_VERSION"
+          "$ANDROID_HOME/cmake/3.31.5/bin/cmake" -S . -B /tmp/cfg -G Ninja \
+            -DCMAKE_MAKE_PROGRAM="$ANDROID_HOME/cmake/3.31.5/bin/ninja" \
+            -DCMAKE_TOOLCHAIN_FILE="$NDK/build/cmake/android.toolchain.cmake" \
+            -DANDROID_ABI=arm64-v8a -DANDROID_PLATFORM=24 -DANDROID_ARM_NEON=true \
+            -DENABLE_QT=0 -DENABLE_WEB_SERVICE=1 -DYUZU_USE_CPM=ON -DCPMUTIL_FORCE_BUNDLED=ON \
+            -DYUZU_USE_BUNDLED_FFMPEG=ON -DBUILD_TESTING=OFF -DYUZU_TESTS=OFF -DDYNARMIC_TESTS=OFF \
+            -DENABLE_WERROR=OFF
+          test -d externals/generated/sdl/java
+
+      - name: Build APK (app code only)
+        id: quick
+        if: steps.plan.outputs.mode == 'prebuilt' && steps.prebuilt.outcome == 'success'
+        continue-on-error: true
+        run: |
+          set -o pipefail
+          cd src/android
+          chmod +x ./gradlew
+          ./gradlew copyMainlineReleaseOutputs -PprebuiltJniDir="$GITHUB_WORKSPACE/prebuilt-jni" \
+            -Pnightly=false 2>&1 | tee ../../build.log
+
+      - uses: actions/cache/restore@v4
+        if: steps.quick.outcome != 'success'
+        with:
+          path: .ccache
+          key: ccache-ns2-${{ github.sha }}
+          restore-keys: ccache-ns2-
+
+      - name: Build APK (full)
+        id: full
+        if: steps.quick.outcome != 'success'
         run: |
           chmod +x .ci/android/build.sh
           set -o pipefail
-          .ci/android/build.sh -t standard -b Release -DENABLE_WERROR=OFF 2>&1 | tee build.log
+          CCACHE=true .ci/android/build.sh -t standard -b Release -DENABLE_WERROR=OFF 2>&1 | tee build.log
+
+      - uses: actions/cache/save@v4
+        if: always() && steps.full.outcome != 'skipped'
+        with:
+          path: .ccache
+          key: ccache-ns2-${{ github.sha }}
 
       - name: Report build errors
-        if: failure()
+        if: failure() || steps.quick.outcome == 'failure'
         run: |
           free -h; df -h /
           sudo dmesg | grep -iE 'killed process|out of memory' | tail -5 | while read -r l; do echo "::error title=kernel::$l"; done
-          grep -E 'error:|FAILED:|BUILD FAILED|Killed|OutOfMemory|No space left' build.log | head -40 | while read -r l; do echo "::error::${l:0:900}"; done
+          grep -E 'error:|e: |FAILED:|BUILD FAILED|Killed|OutOfMemory|No space left' build.log | head -40 | while read -r l; do echo "::error::${l:0:900}"; done
           tail -15 build.log | while read -r l; do echo "::warning title=tail::${l:0:900}"; done
 
       - uses: actions/upload-artifact@v5
