@@ -120,6 +120,7 @@ IApplicationFunctions::IApplicationFunctions(Core::System& system_, std::shared_
         {310, nullptr, "Unknown310"}, // [20.0.0+]
         {320, D<&IApplicationFunctions::GetScreenShotAndContinuousRecordingInitiallyEnabled>,
          "GetScreenShotAndContinuousRecordingInitiallyEnabled"},
+        {321, D<&IApplicationFunctions::Unknown321>, "Unknown321"},
         {330, D<&IApplicationFunctions::Unknown330>, "Unknown330"}, // [20.0.0+]
         {500, nullptr, "StartContinuousRecordingFlushForDebug"},
         {1000, nullptr, "CreateMovieMaker"},
@@ -553,6 +554,12 @@ Result IApplicationFunctions::GetScreenShotAndContinuousRecordingInitiallyEnable
                              m_applet->game_play_recording_state == GamePlayRecordingState::Enabled;
     LOG_DEBUG(Service_AM, "called, screenshot={}, recording={}", *out_screenshot_enabled,
               *out_recording_enabled);
+    R_SUCCEED();
+}
+
+Result IApplicationFunctions::Unknown321(Out<u32> out) {
+    LOG_WARNING(Service_AM, "(STUBBED) called");
+    *out = 0;
     R_SUCCEED();
 }
 
