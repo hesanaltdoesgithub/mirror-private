@@ -411,7 +411,7 @@ private:
                 bool complete = true;
                 for (u32 i = 0; i < fence->num_fences; ++i) {
                     const auto& point = fence->fences[i];
-                    if (point.id != ~u32{0}) {
+                    if (static_cast<u32>(point.id) != ~u32{0}) {
                         const auto counter = m_images->module->GetContainer().GetSyncpointManager().ReadAllocatedSyncpoint(point.id);
                         if (!counter || static_cast<s32>(*counter - point.value) < 0) {
                             complete = false;
