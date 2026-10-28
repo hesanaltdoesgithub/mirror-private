@@ -270,20 +270,38 @@ object GameHelper {
         val root = File(YuzuApplication.appContext.getPublicFilesDir(), "games")
         if (!root.isDirectory) {
             root.mkdirs()
-            return
         }
-        root.listFiles()?.filter { it.isDirectory }?.sortedBy { it.name }?.forEach { dir ->
-            val main = listOf(
-                File(dir, "exefs/main"),
-                File(dir, "base/exefs/main"),
-                File(dir, "main")
-            ).firstOrNull { it.isFile } ?: return@forEach
+
+        // Any "main" with a "main.npdm" beside it, up to four folders deep.
+        val mains = mutableListOf<File>()
+        fun search(dir: File, depth: Int) {
+            if (depth < 0) return
+            val main = File(dir, "main")
+            if (main.isFile && File(dir, "main.npdm").isFile) {
+                mains.add(main)
+                return
+            }
+            dir.listFiles()?.filter { it.isDirectory }?.forEach { search(it, depth - 1) }
+        }
+        search(root, 4)
+
+        val report = mutableListOf<String>()
+        mains.sortedBy { it.absolutePath }.forEach { main ->
             val path = main.absolutePath
+            val shortPath = main.relativeTo(root).path
             if (!GameMetadata.getIsValid(path)) {
+                report.add("Not recognized: $shortPath")
+                Log.warning("[GameHelper] Extracted game not recognized: $path")
                 return@forEach
             }
-            val title = GameMetadata.getTitle(path).ifEmpty { dir.name }
-            val programId = GameMetadata.getProgramId(path).ifEmpty { dir.name }
+            var gameDir = main.parentFile!!
+            while (gameDir.parentFile != null && gameDir.parentFile != root &&
+                gameDir.name.lowercase() in setOf("exefs", "base")
+            ) {
+                gameDir = gameDir.parentFile!!
+            }
+            val title = GameMetadata.getTitle(path).ifEmpty { gameDir.name }
+            val programId = GameMetadata.getProgramId(path).ifEmpty { gameDir.name }
             val game = Game(
                 title,
                 path,
@@ -295,6 +313,26 @@ object GameHelper {
             games.add(game)
             if (programId != "0") {
                 gamesByProgramId[programId] = game
+            }
+            report.add("Added: $title")
+        }
+
+        val folders = root.listFiles()?.count { it.isDirectory } ?: 0
+        val message = if (folders == 0) {
+            "Extracted games folder is empty: ${root.absolutePath}"
+        } else if (mains.isEmpty()) {
+            "Extracted games: $folders folder(s) in games/, but no exefs/main with main.npdm found"
+        } else {
+            report.joinToString("\n")
+        }
+        Log.info("[GameHelper] $message")
+        run {
+            android.os.Handler(android.os.Looper.getMainLooper()).post {
+                android.widget.Toast.makeText(
+                    YuzuApplication.appContext,
+                    message,
+                    android.widget.Toast.LENGTH_LONG
+                ).show()
             }
         }
     }
