@@ -15,6 +15,7 @@ import kotlinx.serialization.json.Json
 import java.io.File
 import org.yuzu.yuzu_emu.NativeLibrary
 import org.yuzu.yuzu_emu.YuzuApplication
+import org.yuzu.yuzu_emu.getPublicFilesDir
 import org.yuzu.yuzu_emu.model.Game
 import org.yuzu.yuzu_emu.model.GameDir
 import org.yuzu.yuzu_emu.model.MinimalDocumentFile
@@ -83,6 +84,8 @@ object GameHelper {
             }
         }
         NativeConfig.setGameDirs(gameDirs.toTypedArray())
+
+        addLocalExtractedGames(games, gamesByProgramId)
 
         // Cache list of games found on disk
         val serializedGames = mutableSetOf<String>()
@@ -252,6 +255,47 @@ object GameHelper {
             }
         } catch (_: Exception) {
             null
+        }
+    }
+
+    /**
+     * Extracted games (an exefs folder holding "main", with romfs beside it) placed under
+     * <app files>/games/<name>/ are opened by plain path, since the deconstructed ROM loader
+     * needs to see sibling folders, which content URIs do not allow.
+     */
+    private fun addLocalExtractedGames(
+        games: MutableList<Game>,
+        gamesByProgramId: MutableMap<String, Game>
+    ) {
+        val root = File(YuzuApplication.appContext.getPublicFilesDir(), "games")
+        if (!root.isDirectory) {
+            root.mkdirs()
+            return
+        }
+        root.listFiles()?.filter { it.isDirectory }?.sortedBy { it.name }?.forEach { dir ->
+            val main = listOf(
+                File(dir, "exefs/main"),
+                File(dir, "base/exefs/main"),
+                File(dir, "main")
+            ).firstOrNull { it.isFile } ?: return@forEach
+            val path = main.absolutePath
+            if (!GameMetadata.getIsValid(path)) {
+                return@forEach
+            }
+            val title = GameMetadata.getTitle(path).ifEmpty { dir.name }
+            val programId = GameMetadata.getProgramId(path).ifEmpty { dir.name }
+            val game = Game(
+                title,
+                path,
+                programId,
+                GameMetadata.getDeveloper(path),
+                GameMetadata.getVersion(path, false),
+                GameMetadata.getIsHomebrew(path)
+            )
+            games.add(game)
+            if (programId != "0") {
+                gamesByProgramId[programId] = game
+            }
         }
     }
 
