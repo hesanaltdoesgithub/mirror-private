@@ -69,7 +69,6 @@ jobs:
       - name: Fetch native libraries from the previous build
         id: prebuilt
         if: steps.plan.outputs.mode == 'prebuilt'
-        continue-on-error: true
         run: |
           set -e
           gh run download "${{ steps.plan.outputs.run_id }}" -R "$GITHUB_REPOSITORY" -n eden-ns2-android -D prev
@@ -90,8 +89,7 @@ jobs:
 
       - name: Build APK (app code only)
         id: quick
-        if: steps.plan.outputs.mode == 'prebuilt' && steps.prebuilt.outcome == 'success'
-        continue-on-error: true
+        if: steps.plan.outputs.mode == 'prebuilt'
         run: |
           set -o pipefail
           cd src/android
@@ -103,7 +101,7 @@ jobs:
           fi
 
       - uses: actions/cache/restore@v4
-        if: steps.quick.outcome != 'success'
+        if: steps.plan.outputs.mode == 'full'
         with:
           path: .ccache
           key: ccache-ns2-${{ github.sha }}
@@ -111,7 +109,7 @@ jobs:
 
       - name: Build APK (full)
         id: full
-        if: steps.quick.outcome != 'success'
+        if: steps.plan.outputs.mode == 'full'
         run: |
           chmod +x .ci/android/build.sh
           set -o pipefail
