@@ -258,11 +258,17 @@ android {
         }
     }
 
-    externalNativeBuild {
-        cmake {
-            version = "3.31.5"
-            path = file("${edenDir}/CMakeLists.txt")
+    // CI can reuse native libraries from an earlier build when only app code changed.
+    val prebuiltJniDir = project.findProperty("prebuiltJniDir") as String?
+    if (prebuiltJniDir == null) {
+        externalNativeBuild {
+            cmake {
+                version = "3.31.5"
+                path = file("${edenDir}/CMakeLists.txt")
+            }
         }
+    } else {
+        sourceSets.getByName("main").jniLibs.srcDir(prebuiltJniDir)
     }
 
     productFlavors.all {
