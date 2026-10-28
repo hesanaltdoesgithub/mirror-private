@@ -692,22 +692,22 @@ public:
     virtual bool LDCLR(bool sz, bool A, bool R, Reg Rs, Reg Rn, Reg Rt) {
         return false;
     }
-    virtual bool LDEOR(bool A, bool R, Reg Rs, Reg Rn, Reg Rt) {
+    virtual bool LDEOR(bool sz, bool A, bool R, Reg Rs, Reg Rn, Reg Rt) {
         return false;
     }
     virtual bool LDSET(bool sz, bool A, bool R, Reg Rs, Reg Rn, Reg Rt) {
         return false;
     }
-    virtual bool LDSMAX(bool A, bool R, Reg Rs, Reg Rn, Reg Rt) {
+    virtual bool LDSMAX(bool sz, bool A, bool R, Reg Rs, Reg Rn, Reg Rt) {
         return false;
     }
-    virtual bool LDSMIN(bool A, bool R, Reg Rs, Reg Rn, Reg Rt) {
+    virtual bool LDSMIN(bool sz, bool A, bool R, Reg Rs, Reg Rn, Reg Rt) {
         return false;
     }
-    virtual bool LDUMAX(bool A, bool R, Reg Rs, Reg Rn, Reg Rt) {
+    virtual bool LDUMAX(bool sz, bool A, bool R, Reg Rs, Reg Rn, Reg Rt) {
         return false;
     }
-    virtual bool LDUMIN(bool A, bool R, Reg Rs, Reg Rn, Reg Rt) {
+    virtual bool LDUMIN(bool sz, bool A, bool R, Reg Rs, Reg Rn, Reg Rt) {
         return false;
     }
     virtual bool SWP(bool sz, bool A, bool R, Reg Rs, Reg Rn, Reg Rt) {
