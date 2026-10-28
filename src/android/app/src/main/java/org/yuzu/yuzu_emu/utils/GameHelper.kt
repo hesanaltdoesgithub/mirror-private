@@ -85,7 +85,7 @@ object GameHelper {
         }
         NativeConfig.setGameDirs(gameDirs.toTypedArray())
 
-        addLocalExtractedGames(games, gamesByProgramId)
+        addLocalExtractedGames(games, gamesByProgramId, gameDirs)
 
         // Cache list of games found on disk
         val serializedGames = mutableSetOf<String>()
@@ -263,9 +263,53 @@ object GameHelper {
      * <app files>/games/<name>/ are opened by plain path, since the deconstructed ROM loader
      * needs to see sibling folders, which content URIs do not allow.
      */
+    /** Maps an external-storage tree URI (e.g. primary:Games) to a plain path. */
+    private fun treeUriToPath(uriString: String): File? {
+        return try {
+            val uri = uriString.toUri()
+            if (uri.authority != "com.android.externalstorage.documents") return null
+            val docId = DocumentsContract.getTreeDocumentId(uri)
+            val volume = docId.substringBefore(':')
+            val relative = docId.substringAfter(':', "")
+            val base = if (volume.equals("primary", true)) {
+                android.os.Environment.getExternalStorageDirectory()
+            } else {
+                File("/storage/$volume")
+            }
+            if (relative.isEmpty()) base else File(base, relative)
+        } catch (e: Exception) {
+            null
+        }
+    }
+
+    private var askedForAllFilesAccess = false
+
+    private fun requestAllFilesAccess() {
+        if (askedForAllFilesAccess) return
+        askedForAllFilesAccess = true
+        android.os.Handler(android.os.Looper.getMainLooper()).post {
+            val context = YuzuApplication.appContext
+            android.widget.Toast.makeText(
+                context,
+                "Allow \"All files access\" for Eden NS2 so it can open extracted Switch 2 games in your game folders",
+                android.widget.Toast.LENGTH_LONG
+            ).show()
+            try {
+                val intent = android.content.Intent(
+                    android.provider.Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION,
+                    "package:${context.packageName}".toUri()
+                ).addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+                context.startActivity(intent)
+            } catch (e: Exception) {
+                Log.warning("[GameHelper] Could not open all-files-access settings: ${e.message}")
+            }
+        }
+    }
+
     private fun addLocalExtractedGames(
         games: MutableList<Game>,
-        gamesByProgramId: MutableMap<String, Game>
+        gamesByProgramId: MutableMap<String, Game>,
+        gameDirs: List<GameDir>
     ) {
         val root = File(YuzuApplication.appContext.getPublicFilesDir(), "games")
         if (!root.isDirectory) {
@@ -285,17 +329,30 @@ object GameHelper {
         }
         search(root, 4)
 
+        // Game folders added in Eden are content URIs, which the folder loader can't
+        // use; with all-files access, scan them again by plain path.
+        val folderPaths = gameDirs.mapNotNull { treeUriToPath(it.uriString) }.distinct()
+        if (folderPaths.isNotEmpty()) {
+            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.R &&
+                !android.os.Environment.isExternalStorageManager()
+            ) {
+                requestAllFilesAccess()
+            } else {
+                folderPaths.forEach { if (it.isDirectory) search(it, 4) }
+            }
+        }
+
         val report = mutableListOf<String>()
         mains.sortedBy { it.absolutePath }.forEach { main ->
             val path = main.absolutePath
-            val shortPath = main.relativeTo(root).path
+            val shortPath = main.parentFile?.parentFile?.name ?: main.path
             if (!GameMetadata.getIsValid(path)) {
                 report.add("Not recognized: $shortPath")
                 Log.warning("[GameHelper] Extracted game not recognized: $path")
                 return@forEach
             }
             var gameDir = main.parentFile!!
-            while (gameDir.parentFile != null && gameDir.parentFile != root &&
+            while (gameDir.parentFile != null &&
                 gameDir.name.lowercase() in setOf("exefs", "base")
             ) {
                 gameDir = gameDir.parentFile!!
@@ -318,9 +375,10 @@ object GameHelper {
         }
 
         val folders = root.listFiles()?.count { it.isDirectory } ?: 0
-        val message = if (folders == 0) {
-            "Extracted games folder is empty: ${root.absolutePath}"
-        } else if (mains.isEmpty()) {
+        if (mains.isEmpty() && folders == 0) {
+            return
+        }
+        val message = if (mains.isEmpty()) {
             "Extracted games: $folders folder(s) in games/, but no exefs/main with main.npdm found"
         } else {
             report.joinToString("\n")
