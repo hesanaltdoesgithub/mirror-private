@@ -34,7 +34,7 @@ jobs:
       - name: Install dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y ninja-build ccache glslang-tools clang lld \
+          sudo apt-get install -y ninja-build ccache glslang-tools gcc-14 g++-14 \
             qt6-base-dev qt6-base-private-dev libqt6charts6-dev libqt6svg6-dev qt6-tools-dev \
             qt6-wayland libgl-dev libvulkan-dev libx11-dev libxext-dev libxrandr-dev \
             libxcursor-dev libxi-dev libxss-dev libwayland-dev libxkbcommon-dev libdbus-1-dev \
@@ -57,7 +57,7 @@ jobs:
           set -o pipefail
           cmake -S . -B build -G Ninja \
             -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=/usr \
-            -DCMAKE_C_COMPILER=clang -DCMAKE_CXX_COMPILER=clang++ \
+            -DCMAKE_C_COMPILER=gcc-14 -DCMAKE_CXX_COMPILER=g++-14 \
             -DCMAKE_C_COMPILER_LAUNCHER=ccache -DCMAKE_CXX_COMPILER_LAUNCHER=ccache \
             -DYUZU_USE_CPM=ON -DCPMUTIL_FORCE_BUNDLED=ON \
             -DYUZU_USE_BUNDLED_FFMPEG=ON -DYUZU_USE_BUNDLED_SDL3=ON \
