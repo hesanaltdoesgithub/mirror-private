@@ -3,6 +3,8 @@ name: Android NS2 APK
 on:
   push:
     branches: [ns2-android]
+    paths-ignore:
+      - '.github/workflows/linux-ns2.yml'
   workflow_dispatch:
 
 concurrency:
